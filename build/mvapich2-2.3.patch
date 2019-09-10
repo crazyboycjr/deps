@@ -1,0 +1,233 @@
+diff -Naur mvapich2-2.3/src/include/mpi.h.in mvapich2-2.3_new/src/include/mpi.h.in
+--- mvapich2-2.3/src/include/mpi.h.in	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/include/mpi.h.in	2019-09-07 21:44:17.173515626 +0800
+@@ -1138,6 +1138,9 @@
+ int MPI_Initialized(int *flag);
+ int MPI_Abort(MPI_Comm comm, int errorcode);
+ 
++extern void* g_mpi_comm_world;
++inline void* MPI_Comm_world_comm() { return g_mpi_comm_world; }
++
+ /* Note that we may need to define a @PCONTROL_LIST@ depending on whether
+    stdargs are supported */
+ int MPI_Pcontrol(const int level, ...);
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/common/src/cm/cm.c mvapich2-2.3_new/src/mpid/ch3/channels/common/src/cm/cm.c
+--- mvapich2-2.3/src/mpid/ch3/channels/common/src/cm/cm.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/common/src/cm/cm.c	2019-09-07 21:44:17.173515626 +0800
+@@ -329,6 +329,12 @@
+     struct ibv_ah_attr ah_attr;
+ 
+     MPIU_Memset(&ah_attr, 0, sizeof(ah_attr));
++    uint8_t traffic_class = 0;
++    char* value = getenv("MV2_RDMA_TRAFFIC_CLASS");
++    if (value) {
++        traffic_class = atoi(value);
++        printf("\033[32mRDMA traffic class set to %hhu, dscp %hhu \033[0m\n", traffic_class, traffic_class >> 2);
++    }
+ 
+     if (use_iboeth) {
+         ah_attr.grh.dgid.global.subnet_prefix = 0;
+@@ -336,7 +342,7 @@
+         ah_attr.grh.flow_label = 0;
+         ah_attr.grh.sgid_index = rdma_default_gid_index;
+         ah_attr.grh.hop_limit = 1;
+-        ah_attr.grh.traffic_class = 0;
++        ah_attr.grh.traffic_class = traffic_class;
+         ah_attr.is_global = 1;
+         ah_attr.dlid = lid;
+         ah_attr.grh.dgid = gid;
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/common/src/rdma_cm/rdma_cm.c mvapich2-2.3_new/src/mpid/ch3/channels/common/src/rdma_cm/rdma_cm.c
+--- mvapich2-2.3/src/mpid/ch3/channels/common/src/rdma_cm/rdma_cm.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/common/src/rdma_cm/rdma_cm.c	2019-09-07 21:49:29.393507536 +0800
+@@ -121,6 +121,17 @@
+                 break;
+             }
+ 
++            uint8_t tos = 0;
++            char* value = getenv("MV2_RDMA_TRAFFIC_CLASS");
++            if (value) {
++                tos = atoi(value);
++                int err = rdma_set_option(cma_id, RDMA_OPTION_ID, RDMA_OPTION_ID_TOS, &tos, sizeof(tos));
++                if (err == 0) {
++                    printf("\033[32mRDMA_CM ToS set to %hhu, dscp %hhu \033[0m\n", tos, tos >> 2);
++                } else {
++                    printf("\033[31mFailed to set RDMA_CM ToS to %hhu, dscp %hhu \033[0m\n", tos, tos >> 2);
++                }
++            }
+             do {
+                 ret = rdma_resolve_route(cma_id, rdma_cm_arp_timeout*exp_factor);
+                 if (ret) {
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h	2019-09-07 21:44:17.176848995 +0800
+@@ -319,7 +319,7 @@
+ #define RDMA_PREPOST_DEPTH              (64)
+ #define RDMA_INITIAL_PREPOST_DEPTH      (10)
+ #define RDMA_LOW_WQE_THRESHOLD          (10)
+-#define RDMA_MAX_RDMA_SIZE              (4194304)
++#define RDMA_MAX_RDMA_SIZE              (4194304 >> 5)
+ #define DEFAULT_RDMA_CONNECT_ATTEMPTS   (20)
+ #define RDMA_DEFAULT_CONNECT_INTERVAL   (100)
+ 
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ibv_rndv.c mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ibv_rndv.c
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ibv_rndv.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ibv_rndv.c	2019-09-07 21:44:17.176848995 +0800
+@@ -102,6 +102,7 @@
+         }
+     }
+     req->mrail.rndv_buf_off = 0;
++    req->mrail.rndv_buf_sent = 0;
+ 
+     /* Step 1.5: If use R3 for smaller messages */
+     if (req->mrail.rndv_buf_sz <= rdma_r3_threshold
+@@ -781,6 +782,8 @@
+ 
+         }
+         sreq->mrail.rndv_buf_off += nbytes; 
++
++	break;
+     }
+ 
+     if( sreq->mrail.rndv_buf_off != sreq->mrail.rndv_buf_sz ) {
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ibv_send.c mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ibv_send.c
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ibv_send.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ibv_send.c	2019-09-07 21:44:17.176848995 +0800
+@@ -1459,6 +1459,8 @@
+         } 
+ 
+         if (v->padding == RPUT_VBUF_FLAG) {
++            req = (MPID_Request *)v->sreq;
++            req->mrail.rndv_buf_sent += v->desc.sg_entry.length;
+             /* HSAM is Activated */
+             if (mv2_MPIDI_CH3I_RDMA_Process.has_hsam) {
+                 req = (MPID_Request *)v->sreq;
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/mpidi_ch3_rdma_pre.h mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/mpidi_ch3_rdma_pre.h
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/mpidi_ch3_rdma_pre.h	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/mpidi_ch3_rdma_pre.h	2019-09-07 21:44:17.176848995 +0800
+@@ -161,6 +161,7 @@
+         void * rndv_buf;    \
+         MPIDI_msg_sz_t rndv_buf_sz;    \
+         MPIDI_msg_sz_t rndv_buf_off;   \
++        MPIDI_msg_sz_t rndv_buf_sent;   \
+         MRAILI_Protocol_t protocol;     \
+         struct dreg_entry *d_entry;     \
+         void     *remote_addr;          \
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_priv.c mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_priv.c
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_priv.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_priv.c	2019-09-07 21:44:17.176848995 +0800
+@@ -1384,13 +1384,20 @@
+     qp_attr.ah_attr.static_rate = rdma_default_static_rate;
+     qp_attr.ah_attr.src_path_bits = rdma_default_src_path_bits;
+ 
++    uint8_t traffic_class = 0;
++    char* value = getenv("MV2_RDMA_TRAFFIC_CLASS");
++    if (value) {
++        traffic_class = atoi(value);
++        printf("\033[32mRDMA traffic class set to %hhu, dscp %hhu \033[0m\n", traffic_class, traffic_class >> 2);
++    }
++
+     if (use_iboeth) {
+         qp_attr.ah_attr.grh.dgid.global.subnet_prefix = 0;
+         qp_attr.ah_attr.grh.dgid.global.interface_id = 0;
+         qp_attr.ah_attr.grh.flow_label = 0;
+         qp_attr.ah_attr.grh.sgid_index = rdma_default_gid_index;
+         qp_attr.ah_attr.grh.hop_limit = 1;
+-        qp_attr.ah_attr.grh.traffic_class = 0;
++        qp_attr.ah_attr.grh.traffic_class = traffic_class;
+         qp_attr.ah_attr.is_global = 1;
+         qp_attr.ah_attr.dlid = 0;
+         qp_attr.path_mtu = IBV_MTU_1024;
+@@ -2062,13 +2069,20 @@
+         qp_attr.ah_attr.src_path_bits = rdma_default_src_path_bits;
+         qp_attr.ah_attr.port_num = vc->mrail.rails[rail_index].port;
+ 
++        uint8_t traffic_class = 0;
++        char* value = getenv("MV2_RDMA_TRAFFIC_CLASS");
++        if (value) {
++            traffic_class = atoi(value);
++            printf("\033[32mRDMA traffic class set to %hhu, dscp %hhu \033[0m\n", traffic_class, traffic_class >> 2);
++        }
++
+         if (use_iboeth) {
+             qp_attr.ah_attr.grh.dgid.global.subnet_prefix = 0;
+             qp_attr.ah_attr.grh.dgid.global.interface_id = 0;
+             qp_attr.ah_attr.grh.flow_label = 0;
+             qp_attr.ah_attr.grh.sgid_index = rdma_default_gid_index;
+             qp_attr.ah_attr.grh.hop_limit = 1;
+-            qp_attr.ah_attr.grh.traffic_class = 0;
++            qp_attr.ah_attr.grh.traffic_class = traffic_class;
+             qp_attr.ah_attr.is_global = 1;
+             qp_attr.path_mtu = IBV_MTU_1024;
+             qp_attr.ah_attr.grh.dgid = gids[rail_index];
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ring_startup.c mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ring_startup.c
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/gen2/ring_startup.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/gen2/ring_startup.c	2019-09-07 21:44:17.180182364 +0800
+@@ -241,13 +241,20 @@
+     qp_attr.ah_attr.src_path_bits   =   rdma_default_src_path_bits;
+     qp_attr.ah_attr.port_num    =   port;
+ 
++    uint8_t traffic_class = 0;
++    char* value = getenv("MV2_RDMA_TRAFFIC_CLASS");
++    if (value) {
++        traffic_class = atoi(value);
++        printf("\033[32mRDMA traffic class set to %hhu, dscp %hhu \033[0m\n", traffic_class, traffic_class >> 2);
++    }
++
+     if (use_iboeth) {
+         qp_attr.ah_attr.grh.dgid.global.subnet_prefix = 0;
+         qp_attr.ah_attr.grh.dgid.global.interface_id = 0;
+         qp_attr.ah_attr.grh.flow_label = 0;
+         qp_attr.ah_attr.grh.sgid_index = rdma_default_gid_index;
+         qp_attr.ah_attr.grh.hop_limit = 1;
+-        qp_attr.ah_attr.grh.traffic_class = 0;
++        qp_attr.ah_attr.grh.traffic_class = traffic_class;
+         qp_attr.ah_attr.is_global      = 1;
+         qp_attr.ah_attr.dlid           = 0;
+         qp_attr.path_mtu            = IBV_MTU_1024;
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/rdma/ch3_init.c mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/rdma/ch3_init.c
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/rdma/ch3_init.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/rdma/ch3_init.c	2019-09-07 21:44:17.180182364 +0800
+@@ -390,6 +390,12 @@
+                 "Continuing without InfiniBand registration cache support.\n");
+             }
+             mv2_MPIDI_CH3I_RDMA_Process.has_lazy_mem_unregister = 0;
++            char* value = getenv("MV2_FORCE_LAZY_UNREGISTER");
++            if (!!value) {
++                mv2_MPIDI_CH3I_RDMA_Process.has_lazy_mem_unregister = 1;
++                printf("\033[32mForce to do lazy memory unregister, lazy_mem_unregister = %d\033[0m\n",
++                       mv2_MPIDI_CH3I_RDMA_Process.has_lazy_mem_unregister);
++            }
+         }
+ #else /* !defined(DISABLE_PTMALLOC) */
+         mallopt(M_TRIM_THRESHOLD, -1);
+diff -Naur mvapich2-2.3/src/mpid/ch3/channels/mrail/src/rdma/ch3_rndvtransfer.c mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/rdma/ch3_rndvtransfer.c
+--- mvapich2-2.3/src/mpid/ch3/channels/mrail/src/rdma/ch3_rndvtransfer.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/channels/mrail/src/rdma/ch3_rndvtransfer.c	2019-09-07 21:44:17.180182364 +0800
+@@ -760,6 +760,7 @@
+                 break; /*VC will be push back when the rput_stop becomes 0*/
+             }
+ #endif
++	    if (sreq->mrail.rndv_buf_off - sreq->mrail.rndv_buf_sent >= 2 * mv2_MPIDI_CH3I_RDMA_Process.maxtransfersize) break;
+             MPIDI_CH3_Rendezvous_push(flowlist, sreq);
+             DEBUG_PRINT("[process rndv] after rndv push\n");
+             if (1 != sreq->mrail.nearly_complete) {
+diff -Naur mvapich2-2.3/src/mpid/ch3/src/mpid_init.c mvapich2-2.3_new/src/mpid/ch3/src/mpid_init.c
+--- mvapich2-2.3/src/mpid/ch3/src/mpid_init.c	2018-07-24 22:30:00.000000000 +0800
++++ mvapich2-2.3_new/src/mpid/ch3/src/mpid_init.c	2019-09-07 21:44:17.180182364 +0800
+@@ -261,6 +261,8 @@
+ extern int smpi_identify_core_for_async_thread(MPIDI_PG_t * pg);
+ #endif /* defined(CHANNEL_MRAIL) */
+ 
++void* g_mpi_comm_world = NULL;
++
+ #undef FUNCNAME
+ #define FUNCNAME MPID_Init
+ #undef FCNAME
+@@ -415,6 +417,7 @@
+      * Initialize the MPI_COMM_WORLD object
+      */
+     comm = MPIR_Process.comm_world;
++    g_mpi_comm_world = comm;
+ 
+     comm->rank        = pg_rank;
+     comm->remote_size = pg_size;
