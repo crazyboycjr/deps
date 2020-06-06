@@ -59,3 +59,13 @@ $(GOOGLE_BENCHMARK):
 	cd $(DIR) && mkdir -p build && cd build && cmake -DBENCHMARK_ENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) ../ && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
+
+GRPC := $(DEPS_PATH)/include/grpcpp/grpcpp.h
+$(GRPC):
+	$(eval FILE=grpc-v1.29.1.tar.gz)
+	$(eval DIR=grpc-v1.29.1)
+	rm -rf $(FILE) $(DIR)
+	$(WGET) $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
+	cd $(DIR) && mkdir -p cmake/build && cd cmake/build
+	cmake -DgRPC_INSTALL=ON -DCMAKE_BUILD_TYPE=Release -DgRPC_BUILD_GRPC_CSHARP_PLUGIN=OFF -DgRPC_BUILD_GRPC_NODE_PLUGIN=OFF -DgRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN=OFF -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) ../.. && $(make) && $(make) install
+	rm -rf $(FILE) $(DIR)
