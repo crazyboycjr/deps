@@ -59,7 +59,6 @@ $(GOOGLE_BENCHMARK):
 	cd $(DIR) && mkdir -p build && cd build && cmake -DBENCHMARK_ENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) ../ && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
 
-
 GRPC := $(DEPS_PATH)/include/grpcpp/grpcpp.h
 $(GRPC):
 	$(eval FILE=grpc-v1.29.1.tar.gz)
@@ -67,4 +66,23 @@ $(GRPC):
 	rm -rf $(FILE) $(DIR)
 	$(WGET) $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
 	cd $(DIR) && mkdir -p cmake/build && cd cmake/build && cmake -DgRPC_INSTALL=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DgRPC_BUILD_GRPC_CSHARP_PLUGIN=OFF -DgRPC_BUILD_GRPC_NODE_PLUGIN=OFF -DgRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN=OFF -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) ../.. && $(MAKE) && $(MAKE) install
+	rm -rf $(FILE) $(DIR)
+
+GFLAGS := $(DEPS_PATH)/include/gflags/gflags.h
+$(GFLAGS):
+	$(eval FILE=gflags-2.2.2.tar.gz)
+	$(eval DIR=gflags-2.2.2)
+	rm -rf $(FILE) $(DIR)
+	$(WGET) $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
+	cd $(DIR) && mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) .. && $(MAKE) && $(MAKE) install
+	rm -rf $(FILE) $(DIR)
+
+LEVELDB := $(DEPS_PATH)/include/leveldb/db.h
+$(LEVELDB):
+	$(eval FILE=leveldb-1.22.tar.gz)
+	$(eval DIR=leveldb-1.22)
+	rm -rf $(FILE) $(DIR)
+	$(WGET) $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
+	cd $(DIR) && mkdir -p build-static && cd build-static && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON LEVELDB_BUILD_TESTS=OFF LEVELDB_BUILD_BENCHMARKS=OFF -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) .. && $(MAKE) && $(MAKE) install
+	cd $(DIR) && mkdir -p build-shared && cd build-shared && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF LEVELDB_BUILD_TESTS=OFF LEVELDB_BUILD_BENCHMARKS=OFF -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) .. && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
