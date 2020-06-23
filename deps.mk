@@ -86,3 +86,12 @@ $(LEVELDB):
 	cd $(DIR) && mkdir -p build-static && cd build-static && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON LEVELDB_BUILD_TESTS=OFF LEVELDB_BUILD_BENCHMARKS=OFF -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) .. && $(MAKE) && $(MAKE) install
 	cd $(DIR) && mkdir -p build-shared && cd build-shared && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF LEVELDB_BUILD_TESTS=OFF LEVELDB_BUILD_BENCHMARKS=OFF -DCMAKE_INSTALL_PREFIX=$(DEPS_PATH) .. && $(MAKE) && $(MAKE) install
 	rm -rf $(FILE) $(DIR)
+
+BRPC := $(DEPS_PATH)/include/brpc/channel.h
+$(BRPC):
+	$(eval FILE=incubator-brpc-0.9.7.tar.gz)
+	$(eval DIR=incubator-brpc-0.9.7)
+	rm -rf $(FILE) $(DIR)
+	$(WGET) $(URL)/$(FILE) && tar --no-same-owner -zxf $(FILE)
+	cd $(DIR) && mkdir -p build && cd build && sh config_brpc.sh --headers="$(DEPS_PATH)/include /usr/include" --libs="$(DEPS_PATH)/lib /usr/lib64" && $(MAKE) && mv output $(DEPS_PATH)
+	rm -rf $(FILE) $(DIR)
