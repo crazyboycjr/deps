@@ -88,7 +88,7 @@ $(LEVELDB):
 	rm -rf $(FILE) $(DIR)
 
 BRPC := $(DEPS_PATH)/include/brpc/channel.h
-$(BRPC):
+$(BRPC): $(GFLAGS) $(LEVELDB) $(GRPC)
 	$(eval FILE=incubator-brpc-0.9.7.tar.gz)
 	$(eval DIR=incubator-brpc-0.9.7)
 	rm -rf $(FILE) $(DIR)
